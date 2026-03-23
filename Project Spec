@@ -1,0 +1,69 @@
+# Expense Reimbursement Processor
+
+Process attached invoice files into a Budget Realization report. Default claimant: Daniel. FX rates from MAS (Monetary Authority of Singapore), tied to the expense date.
+
+## Date Selection Rules
+
+Use the invoice issuance date as stated on the invoice, with these exceptions:
+
+| Category | Date Priority |
+|---|---|
+| General (Meals, Transportation, Entertainment, Other) | Invoice issuance date → order date |
+| Hotel | Departure/checkout date → invoice issuance date → order date |
+| Flight Ticket | Travel start (departure) date → invoice issuance date → order date |
+
+The date selected above is ALSO the date used to look up the MAS exchange rate.
+
+## Expense Categories
+
+Classify each invoice into exactly one of: Flight Ticket, Hotel, Transportation, Meals, Entertainment, Other.
+
+## LLM Vision Extraction Schema
+
+For each invoice, extract:
+{
+  "vendorName": "Merchant name",
+  "date": "YYYY-MM-DD (per date rules above)",
+  "dateType": "invoice | order | departure | travel_start",
+  "amount": 123.45,
+  "currency": "USD | RMB",
+  "description": "Detailed description (see Description Format Rules)",
+  "category": "Flight Ticket | Hotel | Transportation | Meals | Entertainment | Other",
+  "totalNights": 1,
+  "totalUnits": 1,
+  "location": "City if identifiable",
+  "paidBy": "Who paid if visible",
+  "confidence": 0.95
+}
+
+Currency detection: $ = USD, ¥ / CNY / 人民币 = RMB. Flag confidence < 0.8.
+
+## Description Format Rules
+
+| Category | Format | Example |
+|---|---|---|
+| Flight Ticket | Include origin, destination, flight date | Flight Ticket : Dallas to Shanghai (07 Feb 2026) |
+| Hotel | Include city and stay dates | Hotel Accommodation in Shanghai from 05 Feb to 07 Feb 2026 |
+| Transportation | Include destination | DIDI ride to Pudong International Airport |
+| Meals | Include counterparty name | Business dinner with [Counterparty Name] |
+| Entertainment | Include counterparty name | Client entertainment with [Counterparty Name] |
+| Other | Describe clearly | Office supplies for Shanghai office |
+
+For Meals and Entertainment, ALWAYS include the counterparty name. If not visible on invoice, the bot must ASK the user.
+
+## Amount Calculation
+
+totalAmountOriginal = pricePerUnit × totalUnits × (totalNights if Hotel, else 1)
+
+FX conversion is handled AFTER extraction by the fxRateService, NOT by Claude.
+Claude only extracts the original amount and currency. The bot fetches MAS rates and calculates USD + SGD.
+
+## File Renaming
+
+{ClaimantName}_{ExpenseType}_{VendorName}_{Location}_{YYYYMMDD}.{ext}
+
+## Report Output (17 columns — updated with SGD)
+
+No. | Date | User | Expense Type | Vendor Name | Description | Currency | Price/Unit | Total Nights | Total Units | Total Amount (Original) | MAS Rate Date | FX Rate (SGD per unit) | Total Amount (SGD) | FX Rate (USD per unit) | Total Amount (USD) | Paid By
+
+Ends with blank row + TOTAL row summing Total Amount (USD) and Total Amount (SGD).
