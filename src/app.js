@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { App, ExpressReceiver } from '@slack/bolt';
+import pkg from '@slack/bolt';
+const { App, ExpressReceiver } = pkg;
 import { registerAppMentionListener } from './listeners/appMention.js';
 import { registerMessageListener } from './listeners/message.js';
 import { registerActionsListener } from './listeners/actions.js';
