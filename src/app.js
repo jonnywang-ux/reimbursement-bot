@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config(); // no-op if .env missing — Railway injects env vars directly
 import pkg from '@slack/bolt';
 const { App, ExpressReceiver } = pkg;
 import { registerAppMentionListener } from './listeners/appMention.js';
