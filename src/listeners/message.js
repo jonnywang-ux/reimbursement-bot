@@ -4,17 +4,29 @@ import { convertAmount } from '../services/fxRateService.js';
 import { downloadSlackFile, formatSummaryTable } from '../utils/slackHelpers.js';
 import { getSignatureStatus } from '../services/helloSign.js';
 import { log, warn, error } from '../utils/logger.js';
+import { startSession } from '../utils/sessionHelpers.js';
 
 const DONE_RE = /^(done|submit)$/i;
 const STATUS_RE = /^status$/i;
 
 export function registerMessageListener(app) {
-  app.message(async ({ message, client }) => {
+  app.message(async ({ message, say, client }) => {
     console.log('[message] RAW MESSAGE:', JSON.stringify(message, null, 2));
-    // Only process thread messages that aren't from the bot
-    if (!message.thread_ts) { console.log('[message] Ignoring — no thread_ts'); return; }
     if (message.bot_id) { console.log('[message] Ignoring — bot message'); return; }
     if (message.subtype) { console.log('[message] Ignoring — subtype:', message.subtype); return; }
+
+    // @mention with no thread_ts = new session trigger (catches app_mention routed as message)
+    if (!message.thread_ts) {
+      const botUserId = process.env.SLACK_BOT_USER_ID;
+      const isBotMention = botUserId && message.text?.includes(`<@${botUserId}>`);
+      if (isBotMention) {
+        console.log('[message] Detected bot @mention with no thread — treating as app_mention');
+        await startSession(message.channel, message.user, message.ts, say, client);
+      } else {
+        console.log('[message] Ignoring — no thread_ts and not a bot mention');
+      }
+      return;
+    }
 
     const { thread_ts, channel } = message;
 

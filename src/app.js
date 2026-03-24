@@ -59,4 +59,9 @@ registerActionsListener(app);
 console.log('[startup] All listeners registered');
 
 await app.start(PORT);
+
+const auth = await app.client.auth.test();
+process.env.SLACK_BOT_USER_ID = auth.user_id;
+console.log('[startup] Bot user ID:', auth.user_id);
+
 log(`⚡ Reimbursement bot running on port ${PORT}`, { port: PORT });
