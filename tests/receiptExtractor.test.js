@@ -43,6 +43,11 @@ vi.mock('@anthropic-ai/sdk', () => {
   };
 });
 
+/** Wrap JSON in the expected <receipt_json> tag */
+function receipt(obj) {
+  return `I've processed your receipt.\n<receipt_json>${JSON.stringify(obj)}</receipt_json>`;
+}
+
 describe('receiptExtractor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -55,12 +60,13 @@ describe('receiptExtractor', () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Starbucks',
             amount: 5.50,
             currency: 'USD',
             category: 'Meals/Entertainment',
             date: '2026-01-15',
+            description: 'Coffee with Bob',
             confidence: 0.95,
           }),
         },
@@ -71,19 +77,19 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('fake image data');
     const result = await extractReceipt(fileBuffer, 'image/jpeg', 'Coffee meeting');
 
-    expect(result.vendorName).toBe('Starbucks');
-    expect(result.amount).toBe(5.50);
-    expect(result.currency).toBe('USD');
-    expect(result.category).toBe('Meals/Entertainment');
-    expect(result.date).toBe('2026-01-15');
-    expect(result.confidence).toBe(0.95);
+    expect(result.extracted.vendorName).toBe('Starbucks');
+    expect(result.extracted.amount).toBe(5.50);
+    expect(result.extracted.currency).toBe('USD');
+    expect(result.extracted.category).toBe('Meals/Entertainment');
+    expect(result.extracted.date).toBe('2026-01-15');
+    expect(result.extracted.confidence).toBe(0.95);
   });
 
   it('sets needsReview=true when confidence < 0.8', async () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Blurry Receipt',
             amount: 25,
             currency: 'SGD',
@@ -99,20 +105,21 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('blurry image');
     const result = await extractReceipt(fileBuffer, 'image/png');
 
-    expect(result.confidence).toBe(0.65);
-    expect(result.needsReview).toBe(true);
+    expect(result.extracted.confidence).toBe(0.65);
+    expect(result.extracted.needsReview).toBe(true);
   });
 
   it('does not set needsReview when confidence >= 0.8', async () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Clear Receipt',
             amount: 50,
             currency: 'SGD',
             category: 'Meals/Entertainment',
             date: '2026-01-15',
+            description: 'Lunch with Alice',
             confidence: 0.92,
           }),
         },
@@ -123,15 +130,15 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('clear image');
     const result = await extractReceipt(fileBuffer, 'image/jpeg');
 
-    expect(result.confidence).toBe(0.92);
-    expect(result.needsReview).toBeUndefined();
+    expect(result.extracted.confidence).toBe(0.92);
+    expect(result.extracted.needsReview).toBeUndefined();
   });
 
   it('sets missingCounterparty=true for Meals/Entertainment without "with X" in description', async () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Restaurant',
             amount: 45,
             currency: 'SGD',
@@ -148,16 +155,16 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('receipt');
     const result = await extractReceipt(fileBuffer, 'image/jpeg');
 
-    expect(result.category).toBe('Meals/Entertainment');
-    expect(result.description).toBe('Lunch alone');
-    expect(result.missingCounterparty).toBe(true);
+    expect(result.extracted.category).toBe('Meals/Entertainment');
+    expect(result.extracted.description).toBe('Lunch alone');
+    expect(result.extracted.missingCounterparty).toBe(true);
   });
 
   it('does not set missingCounterparty for Meals/Entertainment with "with X" in description', async () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Restaurant',
             amount: 60,
             currency: 'SGD',
@@ -174,14 +181,14 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('receipt');
     const result = await extractReceipt(fileBuffer, 'image/jpeg');
 
-    expect(result.missingCounterparty).toBeUndefined();
+    expect(result.extracted.missingCounterparty).toBeUndefined();
   });
 
   it('sets missingCounterparty for Meals/Entertainment with missing description', async () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Restaurant',
             amount: 35,
             currency: 'SGD',
@@ -197,15 +204,15 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('receipt');
     const result = await extractReceipt(fileBuffer, 'image/jpeg');
 
-    expect(result.description).toBeUndefined();
-    expect(result.missingCounterparty).toBe(true);
+    expect(result.extracted.description).toBeUndefined();
+    expect(result.extracted.missingCounterparty).toBe(true);
   });
 
   it('does not set missingCounterparty for non-Meals categories', async () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Taxi Company',
             amount: 25,
             currency: 'SGD',
@@ -222,11 +229,11 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('receipt');
     const result = await extractReceipt(fileBuffer, 'image/jpeg');
 
-    expect(result.category).toBe('Transportation');
-    expect(result.missingCounterparty).toBeUndefined();
+    expect(result.extracted.category).toBe('Transportation');
+    expect(result.extracted.missingCounterparty).toBeUndefined();
   });
 
-  it('throws error when Claude returns non-JSON response', async () => {
+  it('throws error when Claude returns response with no receipt_json tag', async () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
@@ -239,15 +246,15 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('receipt');
 
     await expect(extractReceipt(fileBuffer, 'image/jpeg')).rejects.toThrow(
-      /Claude returned non-JSON response/,
+      /unparseable/,
     );
   });
 
-  it('throws error when response contains invalid JSON', async () => {
+  it('throws error when response contains invalid JSON inside receipt_json tag', async () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: '{invalid json without closing brace',
+          text: '<receipt_json>{invalid json without closing brace</receipt_json>',
         },
       ],
     });
@@ -269,7 +276,7 @@ describe('receiptExtractor', () => {
       return Promise.resolve({
         content: [
           {
-            text: JSON.stringify({
+            text: receipt({
               vendorName: 'Success',
               amount: 10,
               currency: 'SGD',
@@ -286,7 +293,7 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('receipt');
     const result = await extractReceipt(fileBuffer, 'image/jpeg');
 
-    expect(result.vendorName).toBe('Success');
+    expect(result.extracted.vendorName).toBe('Success');
     expect(callCount).toBeGreaterThanOrEqual(3);
   });
 
@@ -294,7 +301,7 @@ describe('receiptExtractor', () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'PDF Receipt',
             amount: 99,
             currency: 'USD',
@@ -310,10 +317,10 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('fake pdf data');
     const result = await extractReceipt(fileBuffer, 'application/pdf');
 
-    expect(result.vendorName).toBe('PDF Receipt');
+    expect(result.extracted.vendorName).toBe('PDF Receipt');
     const callArgs = globalMockCreate.mock.calls[0][0];
-    const contentArray = callArgs.messages[0].content;
-    const docMessage = contentArray.find((c) => c.type === 'document');
+    const lastMsg = callArgs.messages[callArgs.messages.length - 1];
+    const docMessage = lastMsg.content.find((c) => c.type === 'document');
     expect(docMessage).toBeDefined();
     expect(docMessage.source.media_type).toBe('application/pdf');
   });
@@ -322,7 +329,7 @@ describe('receiptExtractor', () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Test',
             amount: 20,
             currency: 'SGD',
@@ -340,8 +347,8 @@ describe('receiptExtractor', () => {
     await extractReceipt(fileBuffer, 'image/jpeg', context);
 
     const callArgs = globalMockCreate.mock.calls[0][0];
-    const contentArray = callArgs.messages[0].content;
-    const textMessage = contentArray.find((c) => c.type === 'text');
+    const lastMsg = callArgs.messages[callArgs.messages.length - 1];
+    const textMessage = lastMsg.content.find((c) => c.type === 'text');
     expect(textMessage.text).toContain('Additional context from the submitter');
     expect(textMessage.text).toContain(context);
   });
@@ -350,7 +357,7 @@ describe('receiptExtractor', () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Test',
             amount: 15,
             currency: 'SGD',
@@ -367,8 +374,8 @@ describe('receiptExtractor', () => {
     await extractReceipt(fileBuffer, 'image/jpeg', '');
 
     const callArgs = globalMockCreate.mock.calls[0][0];
-    const contentArray = callArgs.messages[0].content;
-    const textMessage = contentArray.find((c) => c.type === 'text');
+    const lastMsg = callArgs.messages[callArgs.messages.length - 1];
+    const textMessage = lastMsg.content.find((c) => c.type === 'text');
     expect(textMessage.text).toContain('No additional context provided');
   });
 
@@ -376,7 +383,7 @@ describe('receiptExtractor', () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Test',
             amount: 10,
             currency: 'SGD',
@@ -394,7 +401,8 @@ describe('receiptExtractor', () => {
     // Test GIF
     await extractReceipt(fileBuffer, 'image/gif');
     let callArgs = globalMockCreate.mock.calls[0][0];
-    let imageMessage = callArgs.messages[0].content.find((c) => c.type === 'image');
+    let lastMsg = callArgs.messages[callArgs.messages.length - 1];
+    let imageMessage = lastMsg.content.find((c) => c.type === 'image');
     expect(imageMessage.source.media_type).toBe('image/gif');
 
     globalMockCreate.mockClear();
@@ -402,7 +410,8 @@ describe('receiptExtractor', () => {
     // Test WebP
     await extractReceipt(fileBuffer, 'image/webp');
     callArgs = globalMockCreate.mock.calls[0][0];
-    imageMessage = callArgs.messages[0].content.find((c) => c.type === 'image');
+    lastMsg = callArgs.messages[callArgs.messages.length - 1];
+    imageMessage = lastMsg.content.find((c) => c.type === 'image');
     expect(imageMessage.source.media_type).toBe('image/webp');
   });
 
@@ -421,7 +430,7 @@ describe('receiptExtractor', () => {
     globalMockCreate.mockResolvedValue({
       content: [
         {
-          text: JSON.stringify({
+          text: receipt({
             vendorName: 'Test',
             amount: 25,
             currency: 'SGD',
@@ -436,9 +445,9 @@ describe('receiptExtractor', () => {
     const fileBuffer = Buffer.from('receipt');
     const result = await extractReceipt(fileBuffer, 'image/jpeg');
 
-    expect(result.vendorName).toBe('Test');
-    expect(result.confidence).toBeUndefined();
-    expect(result.needsReview).toBe(true);
+    expect(result.extracted.vendorName).toBe('Test');
+    expect(result.extracted.confidence).toBeUndefined();
+    expect(result.extracted.needsReview).toBe(true);
   });
 
   it('handles case-insensitive "with" pattern in Meals/Entertainment description', async () => {
@@ -455,7 +464,7 @@ describe('receiptExtractor', () => {
       globalMockCreate.mockResolvedValue({
         content: [
           {
-            text: JSON.stringify({
+            text: receipt({
               vendorName: 'Restaurant',
               amount: 50,
               currency: 'SGD',
@@ -472,9 +481,9 @@ describe('receiptExtractor', () => {
       const result = await extractReceipt(fileBuffer, 'image/jpeg');
 
       if (testCase.hasPartner) {
-        expect(result.missingCounterparty).toBeUndefined();
+        expect(result.extracted.missingCounterparty).toBeUndefined();
       } else {
-        expect(result.missingCounterparty).toBe(true);
+        expect(result.extracted.missingCounterparty).toBe(true);
       }
 
       globalMockCreate.mockClear();

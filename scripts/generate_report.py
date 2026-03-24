@@ -16,7 +16,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 
-def generate_report(expenses_json_path, output_dir, claimant_name="Daniel"):
+def generate_report(expenses_json_path, output_dir, claimant_name="Daniel", reimbursement_purpose=""):
     with open(expenses_json_path, "r") as f:
         expenses = json.load(f)
 
@@ -112,6 +112,43 @@ def generate_report(expenses_json_path, output_dir, claimant_name="Daniel"):
 
     xlsx_path = os.path.join(output_dir, f"{base_name}.xlsx")
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
+        # ── Page 1: Reimbursement Purpose ────────────────────────────────────
+        # Determine date range from expenses
+        all_dates = [exp.get("date", "") for exp in expenses if exp.get("date")]
+        date_range = ""
+        if all_dates:
+            sorted_dates = sorted(all_dates)
+            if sorted_dates[0] == sorted_dates[-1]:
+                date_range = sorted_dates[0]
+            else:
+                date_range = f"{sorted_dates[0]} to {sorted_dates[-1]}"
+
+        purpose_rows = [
+            ["Gunung Capital — Reimbursement Request"],
+            [],
+            ["Claimant", claimant_name],
+            ["Date Range", date_range],
+            ["Total (SGD)", f"{total_sgd:.2f}"],
+            ["Total (USD)", f"{total_usd:.2f}"],
+            [],
+            ["Purpose / Description"],
+            [reimbursement_purpose or "(Not provided)"],
+        ]
+        purpose_df = pd.DataFrame(purpose_rows)
+        purpose_df.to_excel(writer, index=False, header=False, sheet_name="Cover")
+        ws_cover = writer.sheets["Cover"]
+
+        # Style the cover sheet
+        title_font = Font(size=16, bold=True, color="1F4E79")
+        ws_cover["A1"].font = title_font
+        ws_cover["A1"].alignment = Alignment(horizontal="left")
+        label_font = Font(bold=True)
+        for row_num in [3, 4, 5, 6, 9]:
+            ws_cover.cell(row=row_num, column=1).font = label_font
+        ws_cover.column_dimensions["A"].width = 22
+        ws_cover.column_dimensions["B"].width = 50
+
+        # ── Page 2: Budget Realization (existing layout) ─────────────────────
         df.to_excel(writer, index=False, sheet_name="Budget Realization")
         ws = writer.sheets["Budget Realization"]
 
@@ -148,6 +185,7 @@ if __name__ == "__main__":
         print(__doc__)
         sys.exit(1)
     name = sys.argv[3] if len(sys.argv) > 3 else "Daniel"
-    csv_out, xlsx_out = generate_report(sys.argv[1], sys.argv[2], name)
+    purpose = sys.argv[4] if len(sys.argv) > 4 else ""
+    csv_out, xlsx_out = generate_report(sys.argv[1], sys.argv[2], name, purpose)
     print(f"CSV:  {csv_out}")
     print(f"XLSX: {xlsx_out}")

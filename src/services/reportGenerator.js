@@ -35,11 +35,12 @@ function toExpenseRecord(record, claimantName) {
 /**
  * Generate an Excel + CSV report from extracted receipt data.
  *
- * @param {object[]} extractedData  Array of merged extracted+FX records from the pipeline
- * @param {string}   claimantName   Name of the person submitting (default "Daniel")
+ * @param {object[]} extractedData        Array of merged extracted+FX records from the pipeline
+ * @param {string}   claimantName         Name of the person submitting (default "Daniel")
+ * @param {string}   reimbursementPurpose Optional trip/purpose description for Page 1
  * @returns {Promise<{ xlsxPath: string, csvPath: string }>}
  */
-export async function generateReport(extractedData, claimantName = 'Daniel') {
+export async function generateReport(extractedData, claimantName = 'Daniel', reimbursementPurpose = '') {
   // Write expenses JSON to a temp file
   const tmpDir = os.tmpdir();
   const expensesJson = join(tmpDir, `reimbursement_${Date.now()}.json`);
@@ -49,8 +50,11 @@ export async function generateReport(extractedData, claimantName = 'Daniel') {
   writeFileSync(expensesJson, JSON.stringify(expenses, null, 2), 'utf8');
   mkdirSync(outputDir, { recursive: true });
 
-  // Run the Python script
-  const cmd = `python "${SCRIPT_PATH}" "${expensesJson}" "${outputDir}" "${claimantName}"`;
+  // Escape purpose text for shell safety (replace double quotes)
+  const safePurpose = (reimbursementPurpose || '').replace(/"/g, '\\"');
+
+  // Run the Python script — pass purpose as 4th argument
+  const cmd = `python "${SCRIPT_PATH}" "${expensesJson}" "${outputDir}" "${claimantName}" "${safePurpose}"`;
   const output = execSync(cmd, { encoding: 'utf8', timeout: 60_000 });
 
   // Parse the paths from stdout ("CSV:  ...\nXLSX: ...")

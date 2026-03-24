@@ -44,6 +44,7 @@ export function registerActionsListener(app) {
         ({ xlsxPath, csvPath } = await generateReport(
           session.extractedData,
           session.claimantName,
+          session.reimbursementPurpose ?? '',
         ));
         log('Report generated', { threadTs, xlsxPath, csvPath });
       } catch (reportErr) {
