@@ -10,10 +10,11 @@ const STATUS_RE = /^status$/i;
 
 export function registerMessageListener(app) {
   app.message(async ({ message, client }) => {
+    console.log('[message] RAW MESSAGE:', JSON.stringify(message, null, 2));
     // Only process thread messages that aren't from the bot
-    if (!message.thread_ts) return;
-    if (message.bot_id) return;
-    if (message.subtype) return;
+    if (!message.thread_ts) { console.log('[message] Ignoring — no thread_ts'); return; }
+    if (message.bot_id) { console.log('[message] Ignoring — bot message'); return; }
+    if (message.subtype) { console.log('[message] Ignoring — subtype:', message.subtype); return; }
 
     const { thread_ts, channel } = message;
 
@@ -54,7 +55,8 @@ export function registerMessageListener(app) {
     }
 
     const session = getActiveSession(message.channel, message.thread_ts);
-    if (!session) return;
+    if (!session) { console.log('[message] Ignoring — no active session for thread', thread_ts); return; }
+    console.log('[message] Active session found, processing message');
 
     try {
       // a. File attachments
@@ -83,11 +85,17 @@ export function registerMessageListener(app) {
         const updated = getSession(thread_ts);
         const n = updated.receipts.length;
 
-        await client.chat.postMessage({
-          channel,
-          thread_ts,
-          text: `Got it! Processing ${n} receipt${n !== 1 ? 's' : ''}... ⏳`,
-        });
+        console.log('[message] Calling postMessage — processing receipts...');
+        try {
+          await client.chat.postMessage({
+            channel,
+            thread_ts,
+            text: `Got it! Processing ${n} receipt${n !== 1 ? 's' : ''}... ⏳`,
+          });
+          console.log('[message] postMessage completed — processing receipts');
+        } catch (pmErr) {
+          console.error('[message] postMessage FAILED — processing receipts:', pmErr);
+        }
 
         // Extract data from each receipt and fetch FX rates
         const botToken = process.env.SLACK_BOT_TOKEN;
@@ -149,11 +157,18 @@ export function registerMessageListener(app) {
       }
     } catch (err) {
       error('message listener error', err, { threadTs: thread_ts, channel });
-      await client.chat.postMessage({
-        channel,
-        thread_ts,
-        text: `Sorry, something went wrong: ${err.message}`,
-      });
+      console.error('[message] Outer catch error:', err);
+      console.log('[message] Calling postMessage — error fallback...');
+      try {
+        await client.chat.postMessage({
+          channel,
+          thread_ts,
+          text: `Sorry, something went wrong: ${err.message}`,
+        });
+        console.log('[message] postMessage completed — error fallback');
+      } catch (pmErr) {
+        console.error('[message] postMessage FAILED — error fallback:', pmErr);
+      }
     }
   });
 }

@@ -35,7 +35,9 @@ const PORT = process.env.PORT ?? 3000;
 
 const receiver = new ExpressReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET,
+  endpoints: '/slack/events',
 });
+console.log('[startup] ExpressReceiver created with path /slack/events');
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -48,9 +50,13 @@ receiver.app.get('/health', (_req, res) => {
 });
 
 // Register listeners
+console.log('[startup] Registering appMention listener');
 registerAppMentionListener(app);
+console.log('[startup] Registering message listener');
 registerMessageListener(app);
+console.log('[startup] Registering actions listener');
 registerActionsListener(app);
+console.log('[startup] All listeners registered');
 
 await app.start(PORT);
 log(`⚡ Reimbursement bot running on port ${PORT}`, { port: PORT });
